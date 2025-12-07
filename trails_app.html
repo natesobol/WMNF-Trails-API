@@ -48,23 +48,56 @@
 
     /* Root container for the app */
     #app {
+      /* Layout as a column: top section (map + settings) on top, list section below */
       display: flex;
-      flex-direction: row;
+      flex-direction: column;
       height: 100%;
       gap: 0;
     }
 
-    /* Sidebar holds the search/sort controls and the list of trails */
+    /* Top section holds the sidebar and the map side by side */
+    #topSection {
+      display: flex;
+      flex: 1 1 auto;
+      height: 60%;
+      min-height: 300px;
+    }
+
+    /* Adjust the sidebar dimensions; allow vertical scrolling for long content */
     #sidebar {
-      width: 32%;
-      min-width: 300px;
-      max-width: 450px;
+      width: 28%;
+      min-width: 280px;
+      max-width: 400px;
       background-color: var(--bg-secondary);
       border-right: 1px solid var(--border-color);
       display: flex;
       flex-direction: column;
-      overflow: hidden;
+      overflow-y: auto;
     }
+
+    /* Map occupies the remaining width of the top section */
+    #map {
+      flex: 1;
+      height: 100%;
+      background-color: #2d2d2d;
+    }
+
+    /* List section below the map; spans full width */
+    #listSection {
+      width: 100%;
+      flex: none;
+      /* Light grey panel similar to WMNF trails app */
+      background-color: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.3);
+      display: flex;
+      flex-direction: column;
+      padding: 1rem 1.5rem;
+      overflow-y: auto;
+    }
+
+    /* Sidebar (settings) styles defined above.  Old definitions removed to avoid conflicts. */
 
     /* Header section with title */
     .sidebar-header {
@@ -390,25 +423,28 @@
 
     /* Responsive adjustments for smaller screens */
     @media (max-width: 1024px) {
+      /* Increase sidebar width on medium screens */
       #sidebar {
         width: 35%;
-        min-width: 320px;
+        min-width: 280px;
       }
     }
 
     @media (max-width: 768px) {
-      #app {
+      /* Stack sidebar and map vertically on small screens */
+      #topSection {
         flex-direction: column;
+        height: auto;
       }
       #sidebar {
         width: 100%;
         max-width: none;
-        height: 40%;
+        height: auto;
         border-right: none;
         border-bottom: 1px solid var(--border-color);
       }
       #map {
-        height: 60%;
+        height: 300px;
       }
     }
   </style>
@@ -416,36 +452,41 @@
 
 <body>
   <div id="app">
-    <aside id="sidebar">
-      <!-- Sidebar Header -->
-      <div class="sidebar-header">
-        <h1>White Mountain Trails API</h1>
-        <p>White Mountain National Forest</p>
-        <p>Compiled by Nate Sobol</p>
-      </div>
-
-      <!-- Information panel with collapsible instructions and import/export controls -->
-      <div class="info-panel">
-        <details>
-          <summary>About this list</summary>
-          <p>NH Tracing, Redlining, and White Mountain Trails all refer to the same collection of trails described in the guidebook. No matter which name you use, you’re working towards the same goal of experiencing these paths.</p>
-        </details>
-        <details>
-          <summary>Disclaimer</summary>
-          <p>This site is <strong>not intended for planning or navigation</strong>. Trail data may contain minor errors or inaccuracies, and this collection is not the official list (though it includes most of the known trails). Please refer to official sources and use good judgement in the backcountry.</p>
-        </details>
-        <details>
-          <summary>How to use</summary>
-          <p>Use the green circles to mark a trail as completed. After marking a trail, tap the calendar icon to add a date of completion — the date will replace the icon once selected and can be edited by tapping again. Your progress is stored locally in your browser. You can export or import your progress using the buttons below.</p>
-        </details>
-        <div class="export-import">
-          <button id="exportBtn" type="button">Export CSV</button>
-          <label for="importFile" class="import-label">Import
-            <input type="file" id="importFile" accept=".csv,.xlsx,.json" />
-          </label>
+    <!-- Top section containing the sidebar and the map -->
+    <div id="topSection">
+      <aside id="sidebar">
+        <!-- Sidebar Header -->
+        <div class="sidebar-header">
+          <h1>🏔️ WMNF Trails API Companion</h1>
+          <p>White Mountain National Forest</p>
         </div>
-      </div>
-
+        <!-- Information panel with collapsible instructions and import/export controls -->
+        <div class="info-panel">
+          <details>
+            <summary>About this list</summary>
+            <p>NH Tracing, Redlining, and White Mountain Trails all refer to the same collection of trails described in the guidebook. No matter which name you use, you’re working towards the same goal of experiencing these paths.</p>
+          </details>
+          <details>
+            <summary>Disclaimer</summary>
+            <p>This site is <strong>not intended for planning or navigation</strong>. Trail data may contain minor errors or inaccuracies, and this collection is not the official list (though it includes most of the known trails). Please refer to official sources and use good judgement in the backcountry.</p>
+          </details>
+          <details>
+            <summary>How to use</summary>
+            <p>Use the green circles to mark a trail as completed. After marking a trail, tap the calendar icon to add a date of completion — the date will replace the icon once selected and can be edited by tapping again. Your progress is stored locally in your browser. You can export or import your progress using the buttons below.</p>
+          </details>
+          <div class="export-import">
+            <button id="exportBtn" type="button">Export CSV</button>
+            <label for="importFile" class="import-label">Import
+              <input type="file" id="importFile" accept=".csv,.xlsx,.json" />
+            </label>
+          </div>
+        </div>
+      </aside>
+      <!-- Map container -->
+      <div id="map"></div>
+    </div>
+    <!-- List section below the map, spanning full width -->
+    <div id="listSection">
       <!-- Search and sort controls -->
       <div class="controls">
         <input type="text" id="searchInput" placeholder="Search trails…" />
@@ -454,7 +495,6 @@
           <option value="za">Sort Z → A</option>
         </select>
       </div>
-
       <!-- Trail list container -->
       <div class="trail-list-container">
         <ul id="trailList"></ul>
@@ -462,9 +502,7 @@
           <p>Loading trails...</p>
         </div>
       </div>
-    </aside>
-    <!-- Map container -->
-    <div id="map"></div>
+    </div>
   </div>
 
   <!-- Include Leaflet JS library.  Leaflet provides map rendering and helper
