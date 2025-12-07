@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<!--
+  WMNF Trail Explorer
+
+  This HTML document builds a simple, responsive web application that allows users to browse
+  hiking trails in New Hampshire's White Mountain National Forest (WMNF).  It displays a
+  searchable, sortable list of trails alongside an interactive Leaflet map.  When a user
+  selects a trail from the list, the map pans/zooms to the trail and highlights it.  The
+  layout adapts gracefully between desktop and mobile screen sizes using CSS flexbox and
+  media queries.
+
+  To deploy this app, place it in the same directory as the `merged_trails.geojson` file
+  (generated from your original trail GeoJSON files).  The script fetches this file via
+  the Fetch API.  If you host the HTML file on a platform with different hosting paths
+  (e.g. GitHub Pages), adjust the fetch path accordingly or embed the GeoJSON into the
+  page as a JavaScript object.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WMNF Trail Explorer</title>
+  <!-- Include Leaflet CSS from a CDN.  Leaflet is an open source JavaScript library
+       for interactive maps.  The integrity and crossorigin attributes help ensure
+       the file is loaded securely and avoid CORS issues. -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha512-VL+qzkzogL7mTatpQwZ6zCzhy1i5mdNplqbI81JFe4hn/hygb6kRFuPiI1Z/TVkVU45yFvP7p6J20nfgbYGZeQ=="
+    crossorigin=""
+  />
+  <style>
+    /*
+      Base layout styling
+
+      The page is divided into two main parts: a sidebar for the trail list and a map
+      container.  Flexbox allows the sidebar and map to sit side‑by‑side on desktop
+      and stack on smaller screens.  The body and html elements are stretched to
+      occupy the full viewport so that the map fills available space.
+    */
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+    }
+
+    /* Root container for the app */
+    #app {
+      display: flex;
+      flex-direction: row;
+      height: 100%;
+    }
+
+    /* Sidebar holds the search/sort controls and the list of trails */
+    #sidebar {
+      box-sizing: border-box;
+      width: 30%;
+      min-width: 250px;
+      max-width: 400px;
+      padding: 1rem;
+      border-right: 1px solid #ccc;
+      overflow-y: auto;
+      background-color: #fafafa;
+    }
+
+    /* Map container flexes to fill the remaining space */
+    #map {
+      flex: 1;
+    }
+
+    /* Controls container styles the search input and sort dropdown */
+    .controls {
+      margin-bottom: 1rem;
+    }
+    .controls input[type="text"], .controls select {
+      width: 100%;
+      padding: 0.5rem;
+      margin-bottom: 0.5rem;
+      border: 1px solid #aaa;
+      border-radius: 4px;
+      font-size: 1rem;
+      box-sizing: border-box;
+    }
+
+    /* Trail list styles */
+    #trailList {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    #trailList li {
+      padding: 0.5rem;
+      border-bottom: 1px solid #e0e0e0;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    #trailList li:hover {
+      background-color: #e5f3ff;
+    }
+
+    /* Highlight class for selected list items (optional) */
+    #trailList li.active {
+      background-color: #cce5ff;
+      font-weight: bold;
+    }
+
+    /* Responsive adjustments for smaller screens */
+    @media (max-width: 768px) {
+      #app {
+        flex-direction: column;
+      }
+      #sidebar {
+        width: 100%;
+        height: 40%;
+        max-height: 45%;
+        border-right: none;
+        border-bottom: 1px solid #ccc;
+      }
+      #map {
+        height: 60%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <!--
+    The application container.  Inside, a sidebar holds the trail list and controls,
+    while the map occupies the remaining space.  On mobile, these sections stack.
+  -->
+  <div id="app">
+    <aside id="sidebar">
+      <!-- Search and sort controls -->
+      <div class="controls">
+        <!--
+          Search input: users can type to filter the trail list.  The `id` is
+          referenced in the JavaScript below to add an event listener.
+        -->
+        <input type="text" id="searchInput" placeholder="Search trails…" />
+        <!--
+          Sort dropdown: choose between alphabetical and reverse alphabetical order.
+          Additional sort options could be added here (e.g. by length or difficulty)
+          if those properties are available in your GeoJSON.
+        -->
+        <select id="sortSelect">
+          <option value="az">Sort A → Z</option>
+          <option value="za">Sort Z → A</option>
+        </select>
+      </div>
+      <!--
+        Unordered list where trail names will be rendered dynamically by JavaScript.
+      -->
+      <ul id="trailList"></ul>
+    </aside>
+    <!-- Map container.  Leaflet will take over this div and render the tile
+         layers and vector overlays inside it. -->
+    <div id="map"></div>
+  </div>
+
+  <!-- Include Leaflet JS library.  Leaflet provides map rendering and helper
+       functions for working with GeoJSON.  The integrity hash ensures the
+       downloaded script hasn't been tampered with. -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha512-VkWFW8zu6TjwUNdOfZ66kiU/0l+elRd4+Di8DFe1X4kaXT/pMw9v0PKK0JB6TX1A98unxmv0r3qE9OrKknkdZw=="
+    crossorigin=""
+  ></script>
+  <script>
+    (async function() {
+      // Set a rough center over the WMNF.  The map will re‑center when a trail
+      // is selected.  Adjust these coordinates to your preferred initial view.
+      const defaultCenter = [44.05, -71.35];
+      const defaultZoom = 8;
+
+      // Create the map.  The `L.map` function takes the id of the map container.
+      const map = L.map('map').setView(defaultCenter, defaultZoom);
+
+      // Add a basic OpenStreetMap tile layer.  You can replace this with other
+      // providers such as Mapbox or Stamen if you require different styling.
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors',
+        maxZoom: 19
+      }).addTo(map);
+
+      // Containers for the trail data.  `trailLayers` maps trail names to their
+      // Leaflet layer and feature information.  `trailNames` holds just the names
+      // for easy sorting and filtering.
+      const trailLayers = {};
+      const trailNames = [];
+
+      /**
+       * Fetch the GeoJSON file from the server.  Because the file lives in
+       * the same directory as this HTML file, a relative path is sufficient.
+       * If you deploy to a different folder structure, adjust this path.
+       */
+      async function loadGeoJSON() {
+        try {
+          const response = await fetch('merged_trails.geojson');
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status} – ${response.statusText}`);
+          }
+          const data = await response.json();
+          return data;
+        } catch (err) {
+          console.error('Failed to load GeoJSON:', err);
+          alert('Error loading trail data.  Please check the console for details.');
+          return null;
+        }
+      }
+
+      // Helper function to highlight a single trail layer.  Resets all others
+      // back to the default style before applying a highlighted style to the
+      // selected trail.
+      function highlightLayer(targetLayer) {
+        Object.values(trailLayers).forEach(({ layer }) => {
+          layer.setStyle({ color: '#3388ff', weight: 3 });
+        });
+        targetLayer.setStyle({ color: '#e74c3c', weight: 5 });
+      }
+
+      /**
+       * Populate the map with GeoJSON features.  Each feature becomes a
+       * clickable polyline on the map.  When clicked, the trail is highlighted
+       * and the map view zooms to its bounds.  The trail name is used
+       * as a key in the `trailLayers` object for quick lookup later.
+       *
+       * @param {Object} geoData The GeoJSON FeatureCollection to display
+       */
+      function addTrailsToMap(geoData) {
+        L.geoJSON(geoData, {
+          style: function(feature) {
+            // Default line styling.  You can change the color or weight here.
+            return { color: '#3388ff', weight: 3 };
+          },
+          onEachFeature: function(feature, layer) {
+            const name = feature.properties && feature.properties.name
+              ? feature.properties.name
+              : 'Unnamed trail';
+            // Store reference to this layer and its original feature
+            trailLayers[name] = { layer: layer, feature: feature };
+            trailNames.push(name);
+            // Bind a popup showing the trail name.  When the line is clicked
+            // the popup appears.  You can add more content here (length, notes, etc.).
+            layer.bindPopup(`<strong>${name}</strong>`);
+            // Handle click on the map line.  Highlight and zoom.
+            layer.on('click', function() {
+              highlightLayer(layer);
+              map.fitBounds(layer.getBounds(), { maxZoom: 14, animate: true });
+              layer.openPopup();
+            });
+          }
+        }).addTo(map);
+      }
+
+      /**
+       * Render the list of trails in the sidebar.  The list is filtered by
+       * the search input and sorted according to the dropdown.  Each item
+       * becomes clickable; clicking will highlight and pan to the trail.
+       */
+      function renderTrailList() {
+        const listElement = document.getElementById('trailList');
+        const searchQuery = document.getElementById('searchInput').value.trim().toLowerCase();
+        const sortOrder = document.getElementById('sortSelect').value;
+        // Filter names based on the search query
+        let filteredNames = trailNames.filter(name => name.toLowerCase().includes(searchQuery));
+        // Sort the names alphabetically ascending or descending
+        filteredNames.sort((a, b) => {
+          return sortOrder === 'za' ? b.localeCompare(a) : a.localeCompare(b);
+        });
+        // Clear the existing list
+        listElement.innerHTML = '';
+        // Populate list items
+        filteredNames.forEach(name => {
+          const li = document.createElement('li');
+          li.textContent = name;
+          // When a list item is clicked, highlight and pan to the trail
+          li.addEventListener('click', function() {
+            const info = trailLayers[name];
+            if (info) {
+              highlightLayer(info.layer);
+              map.fitBounds(info.layer.getBounds(), { maxZoom: 14, animate: true });
+              info.layer.openPopup();
+              // Optionally mark the clicked list item as active
+              document.querySelectorAll('#trailList li').forEach(el => el.classList.remove('active'));
+              this.classList.add('active');
+            }
+          });
+          listElement.appendChild(li);
+        });
+      }
+
+      // Load the GeoJSON and initialize the map/list.  After the data is loaded
+      // we add trails to the map and render the list.  Bind event listeners
+      // for search and sort controls.
+      const geoData = await loadGeoJSON();
+      if (!geoData) return;
+      addTrailsToMap(geoData);
+      renderTrailList();
+
+      // Re‑render the list whenever search input or sort order changes
+      document.getElementById('searchInput').addEventListener('input', renderTrailList);
+      document.getElementById('sortSelect').addEventListener('change', renderTrailList);
+    })();
+  </script>
+</body>
+</html>
