@@ -88,10 +88,27 @@
     }
 
     /* Map occupies the remaining width of the top section */
+    /* Container wrapping the map. Provides padding and its own border to avoid
+       the map touching other edges. On mobile, this container will stack
+       neatly below the sidebar. */
+    #mapContainer {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      margin: 1rem;
+      padding: 1rem;
+      background-color: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+    }
+
+    /* Map itself fills its container */
     #map {
       flex: 1;
+      width: 100%;
       height: 100%;
       background-color: #2d2d2d;
+      border-radius: 6px;
     }
 
     /* List section below the map; spans full width */
@@ -502,6 +519,10 @@
         border-right: none;
         border-bottom: 1px solid var(--border-color);
       }
+      /* Ensure the map container has appropriate margin on mobile */
+      #mapContainer {
+        margin: 1rem;
+      }
       #map {
         height: 300px;
       }
@@ -521,17 +542,27 @@
         </div>
         <!-- Information panel with collapsible instructions and import/export controls -->
         <div class="info-panel">
-          <details>
+          <details open>
             <summary>About this list</summary>
             <p>NH Tracing, Redlining, and White Mountain Trails all refer to the same collection of trails described in the guidebook. No matter which name you use, you’re working towards the same goal of experiencing these paths.</p>
           </details>
-          <details>
+          <details open>
             <summary>Disclaimer</summary>
             <p>This site is <strong>not intended for planning or navigation</strong>. Trail data may contain minor errors or inaccuracies, and this collection is not the official list (though it includes most of the known trails). Please refer to official sources and use good judgement in the backcountry.</p>
           </details>
-          <details>
+          <details open>
             <summary>How to use</summary>
             <p>Use the green circles to mark a trail as completed. After marking a trail, tap the calendar icon to add a date of completion — the date will replace the icon once selected and can be edited by tapping again. Your progress is stored locally in your browser. You can export or import your progress using the buttons below.</p>
+          </details>
+          <!-- Settings collapsible section for additional options -->
+          <details>
+            <summary>Settings</summary>
+            <div style="margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.85rem;">
+              <label style="display: flex; align-items: center; gap: 0.5rem;">
+                <input type="checkbox" id="hideCompleted" style="accent-color: var(--button-green);"> Hide completed trails
+              </label>
+              <button id="clearProgress" type="button" style="padding: 0.4rem 0.75rem; background-color: var(--button-green); color: white; border: none; border-radius: 5px; font-size: 0.8rem; cursor: pointer; width: fit-content;">Clear all progress</button>
+            </div>
           </details>
           <div class="export-import">
             <button id="exportBtn" type="button">Export CSV</button>
@@ -541,8 +572,10 @@
           </div>
         </div>
       </aside>
-      <!-- Map container -->
-      <div id="map"></div>
+      <!-- Map container wrapped in its own panel to provide padding and border -->
+      <div id="mapContainer">
+        <div id="map"></div>
+      </div>
     </div>
     <!-- List section below the map, spanning full width -->
     <div id="listSection">
@@ -630,6 +663,10 @@
       // Retrieve success (completed) color from CSS variables.  Fallback to
       // a hardcoded green if not found.
       const successColor = getComputedStyle(document.documentElement).getPropertyValue('--success-green').trim() || '#51cf66';
+
+      // Track whether completed trails should be hidden in the list. This is toggled
+      // via the settings panel checkbox. Defaults to false (show all).
+      let hideCompleted = false;
 
       /**
        * Load completion data from localStorage.  If no data exists, an empty
@@ -912,6 +949,14 @@
         const sortOrder = document.getElementById('sortSelect').value;
         // Filter names based on the search query
         let filteredNames = trailNames.filter(name => name.toLowerCase().includes(searchQuery));
+
+        // If hideCompleted is enabled, filter out names that are marked completed
+        if (hideCompleted) {
+          filteredNames = filteredNames.filter(name => {
+            const status = completedTrails[name];
+            return !(status && status.completed);
+          });
+        }
         // Sort the names alphabetically ascending or descending
         filteredNames.sort((a, b) => {
           return sortOrder === 'za' ? b.localeCompare(a) : a.localeCompare(b);
@@ -1073,5 +1118,27 @@
       // Re‑render the list whenever search input or sort order changes
       document.getElementById('searchInput').addEventListener('input', renderTrailList);
       document.getElementById('sortSelect').addEventListener('change', renderTrailList);
+
+      // Handle hide completed toggle
+      const hideCheckbox = document.getElementById('hideCompleted');
+      if (hideCheckbox) {
+        hideCheckbox.addEventListener('change', function() {
+          hideCompleted = this.checked;
+          renderTrailList();
+        });
+      }
+
+      // Handle clearing all progress
+      const clearBtn = document.getElementById('clearProgress');
+      if (clearBtn) {
+        clearBtn.addEventListener('click', function() {
+          if (confirm('Are you sure you want to clear all progress?')) {
+            completedTrails = {};
+            saveCompletion();
+            applyCompletionStyles();
+            renderTrailList();
+          }
+        });
+      }
     })();
   </script>
