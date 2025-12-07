@@ -65,7 +65,8 @@
       /* Allocate more vertical space to the top section using flex-grow.  A higher value
          means a taller map.  Use 3 to force the panel to occupy most of the height. */
       flex: 3 1 0;
-      min-height: 300px;
+      /* Raise the minimum height so the map and settings are taller vertically */
+      min-height: 450px;
     }
 
     /* Adjust the sidebar dimensions; allow vertical scrolling for long content */
