@@ -178,14 +178,26 @@
       color: var(--text-secondary);
     }
 
-    /* Letter navigation bar for quick jumping to trails starting with a letter */
+    /* Wrapper for the letter navigation bar and its label */
+    .letter-nav-wrapper {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1.5rem 0.5rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .jump-label {
+      font-size: 0.75rem;
+      color: var(--text-primary);
+      user-select: none;
+    }
     .letter-nav {
       display: flex;
       flex-wrap: wrap;
       justify-content: center;
-      padding: 0.5rem 0.5rem;
-      margin: 0 1.5rem 0.5rem;
-      border-bottom: 1px solid var(--border-color);
+      gap: 0.15rem;
     }
     .letter-nav span {
       cursor: pointer;
@@ -423,6 +435,25 @@
       display: none;
     }
 
+    /* Style for the link to view the GitHub API repository */
+    .view-api-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.4rem 0.75rem;
+      background-color: var(--button-green);
+      color: white;
+      border: none;
+      border-radius: 5px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background-color 0.2s ease;
+    }
+    .view-api-link:hover {
+      background-color: var(--button-green-dark);
+    }
+
     /* Trail list styling adjustments for completed status */
     #trailList li {
       display: flex;
@@ -526,6 +557,21 @@
       #map {
         height: 300px;
       }
+
+      #mapContainer {
+        min-height: 320px;
+      }
+
+      /* Remove internal scrollbars on mobile to prevent competing scrollers */
+      #sidebar {
+        overflow-y: visible;
+      }
+      #listSection {
+        overflow-y: visible;
+      }
+      .trail-list-container {
+        overflow-y: visible;
+      }
     }
   </style>
 </head>
@@ -538,7 +584,7 @@
         <!-- Sidebar Header -->
         <div class="sidebar-header">
         <h1>🏔️ WMNF Trails API Map Tool</h1>
-          <p>White Mountain National Forest</p>
+          <p>White Mountain National Forest — compiled by Nate Sobol. Use this as a quick trail finder and completion tracker.</p>
         </div>
         <!-- Information panel with collapsible instructions and import/export controls -->
         <div class="info-panel">
@@ -570,6 +616,16 @@
               <input type="file" id="importFile" accept=".csv,.xlsx,.json" />
             </label>
           </div>
+      <!-- Link to view the GitHub API repository -->
+      <div class="api-link-container" style="margin-top: 0.75rem;">
+        <a href="https://github.com/natesobol/WMNF-Trails-API/tree/main" target="_blank" rel="noopener noreferrer" class="view-api-link">
+          <!-- GitHub logo SVG -->
+          <svg aria-hidden="true" height="16" viewBox="0 0 16 16" version="1.1" width="16" style="fill: currentColor; margin-right: 0.4rem;">
+            <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.62 7.62 0 012-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+          </svg>
+          View API
+        </a>
+      </div>
         </div>
       </aside>
       <!-- Map container wrapped in its own panel to provide padding and border -->
@@ -581,14 +637,20 @@
     <div id="listSection">
       <!-- Search and sort controls -->
       <div class="controls">
-        <input type="text" id="searchInput" placeholder="Search trails…" />
+        <!-- Search input with autocomplete support using datalist -->
+        <input type="text" id="searchInput" placeholder="Search trails…" list="trailSuggestions" autocomplete="off" />
+        <!-- Datalist providing autocomplete suggestions for trail names sans suffixes -->
+        <datalist id="trailSuggestions"></datalist>
         <select id="sortSelect">
           <option value="az">Sort A → Z</option>
           <option value="za">Sort Z → A</option>
         </select>
       </div>
-      <!-- A‑Z letter navigation bar -->
-      <div id="letterNav" class="letter-nav"></div>
+      <!-- A‑Z letter navigation bar with label -->
+      <div class="letter-nav-wrapper">
+        <span class="jump-label">Jump To:</span>
+        <div id="letterNav" class="letter-nav"></div>
+      </div>
       <!-- Header row for the trail list -->
       <div class="list-header">
         <span class="header-name">Trail Name</span>
@@ -743,6 +805,27 @@
           const color = completed ? successColor : '#3388ff';
           const weight = completed ? 5 : 3;
           info.layer.setStyle({ color: color, weight: weight });
+        });
+      }
+
+      /**
+       * Apply a visibility filter based on the current search results.  This
+       * function hides trails not present in the filtered list by setting
+       * their opacity to zero while preserving their original colors and
+       * weights.  Visible trails remain at full opacity.
+       *
+       * @param {string[]} filteredNames The list of trail names that should be visible
+       */
+      function applyFilterStyles(filteredNames) {
+        Object.entries(trailLayers).forEach(([name, info]) => {
+          const status = completedTrails[name];
+          const completed = status && status.completed;
+          const isVisible = filteredNames.includes(name);
+          // Determine color and weight as in applyCompletionStyles
+          const color = completed ? successColor : '#3388ff';
+          const weight = completed ? 5 : 3;
+          const opacity = isVisible ? 1 : 0;
+          info.layer.setStyle({ color: color, weight: weight, opacity: opacity });
         });
       }
 
@@ -903,6 +986,33 @@
       }
 
       /**
+       * Populate the datalist for autocomplete suggestions.  Creates a set of
+       * simplified trail names with common suffix words removed (e.g., "Trail",
+       * "Loop", "Cutoff", etc.) and inserts them as options into the datalist.
+       */
+      function populateSuggestions() {
+        const suffixes = ['trail','loop','cutoff','road','path','connector','summit','route'];
+        const suggestions = new Set();
+        trailNames.forEach(name => {
+          // Remove trailing suffix words
+          let parts = name.split(' ');
+          while (parts.length > 1 && suffixes.includes(parts[parts.length - 1].toLowerCase())) {
+            parts.pop();
+          }
+          const suggestion = parts.join(' ');
+          suggestions.add(suggestion);
+        });
+        const datalist = document.getElementById('trailSuggestions');
+        if (!datalist) return;
+        datalist.innerHTML = '';
+        suggestions.forEach(s => {
+          const option = document.createElement('option');
+          option.value = s;
+          datalist.appendChild(option);
+        });
+      }
+
+      /**
        * Populate the map with GeoJSON features.  Each feature becomes a
        * clickable polyline on the map.  When clicked, the trail is highlighted
        * and the map view zooms to its bounds.  The trail name is used
@@ -947,8 +1057,17 @@
         const listElement = document.getElementById('trailList');
         const searchQuery = document.getElementById('searchInput').value.trim().toLowerCase();
         const sortOrder = document.getElementById('sortSelect').value;
-        // Filter names based on the search query
-        let filteredNames = trailNames.filter(name => name.toLowerCase().includes(searchQuery));
+        // Filter names based on the search query.  Match both the full name and
+        // a simplified version with common suffix words removed (e.g., Trail, Loop).
+        let filteredNames = trailNames.filter(name => {
+          const nameLower = name.toLowerCase();
+          // Remove common suffix words from the end of the trail name
+          const simple = nameLower
+            .replace(/\b(trail|loop|cutoff|road|path|connector|summit|route)\b/g, '')
+            .replace(/\s+/g, ' ') // collapse multiple spaces
+            .trim();
+          return nameLower.includes(searchQuery) || simple.includes(searchQuery);
+        });
 
         // If hideCompleted is enabled, filter out names that are marked completed
         if (hideCompleted) {
@@ -1088,6 +1207,9 @@
             letterPositions[initial] = idx;
           }
         });
+
+        // After updating the list, apply map filter to show only trails in the filtered list
+        applyFilterStyles(filteredNames);
       }
 
       // Load the GeoJSON and initialize the map/list.  After the data is loaded
@@ -1113,6 +1235,8 @@
       }
       
       addTrailsToMap(geoData);
+      // Populate the autocomplete suggestions after trail names are loaded
+      populateSuggestions();
       renderTrailList();
 
       // Re‑render the list whenever search input or sort order changes
