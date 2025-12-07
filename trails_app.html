@@ -53,8 +53,8 @@
       flex-direction: column;
       height: 100%;
       gap: 0;
-      /* White border around the entire application similar to peakbagger */
-      border: 1px solid rgba(255, 255, 255, 0.15);
+      /* Pure white border around the entire application similar to peakbagger */
+      border: 1px solid #ffffff;
       border-radius: 8px;
       box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
     }
@@ -62,10 +62,9 @@
     /* Top section holds the sidebar and the map side by side */
     #topSection {
       display: flex;
-      /* Allocate more vertical space to the top section using flex-grow.  The ratio
-         between this and the list section controls the map height.  A higher
-         value means a taller map. */
-      flex: 2 1 0;
+      /* Allocate more vertical space to the top section using flex-grow.  A higher value
+         means a taller map.  Use 3 to force the panel to occupy most of the height. */
+      flex: 3 1 0;
       min-height: 300px;
     }
 
@@ -153,6 +152,30 @@
 
     .controls input[type="text"]::placeholder {
       color: var(--text-secondary);
+    }
+
+    /* Letter navigation bar for quick jumping to trails starting with a letter */
+    .letter-nav {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      padding: 0.5rem 0.5rem;
+      margin: 0 1.5rem 0.5rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .letter-nav span {
+      cursor: pointer;
+      color: var(--text-primary);
+      font-size: 0.75rem;
+      margin: 0.15rem 0.2rem;
+      padding: 0.25rem 0.4rem;
+      border-radius: 4px;
+      flex: none;
+      user-select: none;
+    }
+    .letter-nav span:hover {
+      background-color: var(--hover-bg);
+      color: var(--accent-blue);
     }
 
     .controls input[type="text"]:focus,
@@ -502,6 +525,8 @@
           <option value="za">Sort Z → A</option>
         </select>
       </div>
+      <!-- A‑Z letter navigation bar -->
+      <div id="letterNav" class="letter-nav"></div>
       <!-- Trail list container -->
       <div class="trail-list-container">
         <ul id="trailList"></ul>
@@ -526,7 +551,7 @@
       // Set an improved center and zoom over the White Mountain National Forest.
       // These coordinates zoom closer to the core of the WMNF while showing most trails.
       const defaultCenter = [44.15, -71.5];
-      const defaultZoom = 10;
+      const defaultZoom = 9;
 
       // Create the map.  The `L.map` function takes the id of the map container.
       const map = L.map('map').setView(defaultCenter, defaultZoom);
@@ -547,6 +572,27 @@
       const trailNames = [];
       const completionKey = 'wmnfTrailCompletion';
       let completedTrails = {};
+      // A‑Z navigation helpers
+      const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+      let letterPositions = {};
+      // Create the letter navigation bar elements once
+      const letterNavContainer = document.getElementById('letterNav');
+      letters.forEach(letter => {
+        const span = document.createElement('span');
+        span.textContent = letter;
+        span.setAttribute('data-letter', letter);
+        span.addEventListener('click', function(e) {
+          const targetLetter = this.getAttribute('data-letter');
+          const idx = letterPositions[targetLetter];
+          if (idx != null && idx !== undefined && idx >= 0) {
+            const li = document.querySelectorAll('#trailList li')[idx];
+            if (li) {
+              li.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+          }
+        });
+        letterNavContainer.appendChild(span);
+      });
       // Retrieve success (completed) color from CSS variables.  Fallback to
       // a hardcoded green if not found.
       const successColor = getComputedStyle(document.documentElement).getPropertyValue('--success-green').trim() || '#51cf66';
@@ -950,6 +996,18 @@
           li.appendChild(dateInput);
           li.appendChild(statusSpan);
           listElement.appendChild(li);
+        });
+
+        // Update letterPositions for A‑Z navigation
+        // Initialize positions to null
+        letterPositions = {};
+        letters.forEach(l => { letterPositions[l] = null; });
+        // Determine the first index for each starting letter in the current filtered list
+        filteredNames.forEach((name, idx) => {
+          const initial = name.charAt(0).toUpperCase();
+          if (letterPositions[initial] === null) {
+            letterPositions[initial] = idx;
+          }
         });
       }
 
