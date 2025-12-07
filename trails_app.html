@@ -572,6 +572,26 @@
       .trail-list-container {
         overflow-y: visible;
       }
+          /* Button for launching virtual hike page */
+    .hike-btn {
+      width: 24px;
+      height: 24px;
+      margin-left: 0.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: var(--button-green); /* reuse existing button color */
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
+    }
+    .hike-btn:hover {
+      background-color: var(--button-green-dark);
+    }
+
     }
   </style>
 </head>
@@ -1053,216 +1073,217 @@
        * the search input and sorted according to the dropdown.  Each item
        * becomes clickable; clicking will highlight and pan to the trail.
        */
-      function renderTrailList() {
-        const listElement = document.getElementById('trailList');
-        const searchQuery = document.getElementById('searchInput').value.trim().toLowerCase();
-        const sortOrder = document.getElementById('sortSelect').value;
-        // Filter names based on the search query.  Match both the full name and
-        // a simplified version with common suffix words removed (e.g., Trail, Loop).
-        let filteredNames = trailNames.filter(name => {
-          const nameLower = name.toLowerCase();
-          // Remove common suffix words from the end of the trail name
-          const simple = nameLower
-            .replace(/\b(trail|loop|cutoff|road|path|connector|summit|route)\b/g, '')
-            .replace(/\s+/g, ' ') // collapse multiple spaces
-            .trim();
-          return nameLower.includes(searchQuery) || simple.includes(searchQuery);
-        });
+/**
+ * Render the list of trails based on search, sorting, and completion status.
+ * Uses helper functions for filtering, sorting, rendering individual items,
+ * and updating A‑Z navigation positions.  Call this whenever the search
+ * query, sort order, or completed‑trails state changes.
+ */
+function renderTrailList() {
+  const listElement  = document.getElementById('trailList');
+  const container    = listElement.parentElement;
+  const searchQuery  = document.getElementById('searchInput').value.trim().toLowerCase();
+  const sortOrder    = document.getElementById('sortSelect').value;
 
-        // If hideCompleted is enabled, filter out names that are marked completed
-        if (hideCompleted) {
-          filteredNames = filteredNames.filter(name => {
-            const status = completedTrails[name];
-            return !(status && status.completed);
-          });
-        }
-        // Sort the names alphabetically ascending or descending
-        filteredNames.sort((a, b) => {
-          return sortOrder === 'za' ? b.localeCompare(a) : a.localeCompare(b);
-        });
-        // Remove any previous empty state messages
-        const container = listElement.parentElement;
-        container.querySelectorAll('.empty-state').forEach(el => el.remove());
-        // Clear the existing list
-        listElement.innerHTML = '';
-        
-        // Show empty state if no results
-        if (filteredNames.length === 0) {
-          const emptyMsg = document.createElement('div');
-          emptyMsg.className = 'empty-state';
-          emptyMsg.textContent = searchQuery 
-            ? 'No trails found. Try a different search.' 
-            : 'No trails available.';
-          container.appendChild(emptyMsg);
-          return;
-        }
-        
-        // Populate list items with status circle, date controls and name
-        filteredNames.forEach(name => {
-          const li = document.createElement('li');
-          // Name span
-          const nameSpan = document.createElement('span');
-          nameSpan.className = 'trail-name';
-          nameSpan.textContent = name;
-          // Status circle for completion toggle
-          const statusSpan = document.createElement('span');
-          statusSpan.className = 'status-circle';
-          const statusData = completedTrails[name];
-          if (statusData && statusData.completed) {
-            statusSpan.classList.add('completed');
-          }
-          statusSpan.addEventListener('click', function(e) {
-            e.stopPropagation();
-            toggleCompletion(name);
-          });
-          // Date container and input
-          const dateContainer = document.createElement('span');
-          dateContainer.className = 'date-container';
-          const dateData = completedTrails[name];
-          if (dateData && dateData.completed) {
-            if (dateData.date) {
-              dateContainer.textContent = dateData.date;
-            } else {
-              dateContainer.innerHTML = '<span class="date-icon">📅</span>';
-            }
-          } else {
-            dateContainer.style.display = 'none';
-          }
-          const dateInput = document.createElement('input');
-          dateInput.type = 'date';
-          dateInput.className = 'date-input';
-          dateInput.value = (dateData && dateData.date) ? dateData.date : '';
-          // When clicking the date container, show the date picker
-          dateContainer.addEventListener('click', function(e) {
-            e.stopPropagation();
-            // Hide display and show input
-            dateContainer.style.display = 'none';
-            dateInput.style.display = 'inline-flex';
-            dateInput.focus();
-          });
-          // Prevent click on date input from selecting the trail
-          dateInput.addEventListener('click', function(e) {
-            e.stopPropagation();
-          });
-          // When the date value changes, update the stored date
-          dateInput.addEventListener('change', function() {
-            const newDate = dateInput.value;
-            if (!completedTrails[name]) {
-              completedTrails[name] = { completed: true, date: newDate };
-            } else {
-              completedTrails[name].completed = true;
-              completedTrails[name].date = newDate;
-            }
-            saveCompletion();
-            // Update date container display
-            if (newDate) {
-              dateContainer.textContent = newDate;
-            } else {
-              dateContainer.innerHTML = '<span class="date-icon">📅</span>';
-            }
-          });
-          // Hide the input and show the container on blur
-          dateInput.addEventListener('blur', function() {
-            dateInput.style.display = 'none';
-            const data = completedTrails[name];
-            if (data && data.completed) {
-              if (data.date) {
-                dateContainer.textContent = data.date;
-              } else {
-                dateContainer.innerHTML = '<span class="date-icon">📅</span>';
-              }
-              dateContainer.style.display = 'flex';
-            } else {
-              dateContainer.style.display = 'none';
-            }
-          });
-          // Click on list item selects trail on map
-          li.addEventListener('click', function() {
-            const info = trailLayers[name];
-            if (info) {
-              highlightLayer(info.layer);
-              map.fitBounds(info.layer.getBounds(), { maxZoom: 14, animate: true });
-              info.layer.openPopup();
-              // Mark the clicked list item as active
-              document.querySelectorAll('#trailList li').forEach(el => el.classList.remove('active'));
-              this.classList.add('active');
-            }
-          });
-          // Assemble list item: name, date controls and status indicator
-          li.appendChild(nameSpan);
-          li.appendChild(dateContainer);
-          li.appendChild(dateInput);
-          li.appendChild(statusSpan);
-          listElement.appendChild(li);
-        });
+  // 1. Filter names by search query and hide‑completed flag.
+  let names = trailNames.filter(name => filterBySearch(name, searchQuery));
+  if (hideCompleted) {
+    names = names.filter(name => !isTrailCompleted(name));
+  }
 
-        // Update letterPositions for A‑Z navigation
-        // Initialize positions to null
-        letterPositions = {};
-        letters.forEach(l => { letterPositions[l] = null; });
-        // Determine the first index for each starting letter in the current filtered list
-        filteredNames.forEach((name, idx) => {
-          const initial = name.charAt(0).toUpperCase();
-          if (letterPositions[initial] === null) {
-            letterPositions[initial] = idx;
-          }
-        });
+  // 2. Sort names alphabetically (ascending by default, descending if 'za').
+  names.sort((a, b) => (sortOrder === 'za' ? b.localeCompare(a) : a.localeCompare(b)));
 
-        // After updating the list, apply map filter to show only trails in the filtered list
-        applyFilterStyles(filteredNames);
+  // 3. Clear any previous empty‑state messages and existing list items.
+  container.querySelectorAll('.empty-state').forEach(el => el.remove());
+  listElement.innerHTML = '';
+
+  // 4. If no names match, show an appropriate empty message and return early.
+  if (names.length === 0) {
+    showEmptyState(container, searchQuery);
+    return;
+  }
+
+  // 5. Populate list items for each trail.
+  names.forEach(name => {
+    const li = createTrailListItem(name);
+    listElement.appendChild(li);
+  });
+
+  // 6. Update A‑Z navigation positions and apply map filter styles.
+  updateLetterPositions(names);
+  applyFilterStyles(names);
+}
+
+/**
+ * Return true if a trail name matches the search query.  It checks both the
+ * full name and a simplified version with common suffixes removed.
+ */
+function filterBySearch(name, query) {
+  if (!query) return true;
+  const nameLower = name.toLowerCase();
+  const simple    = nameLower
+    .replace(/\b(trail|loop|cutoff|road|path|connector|summit|route)\b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return nameLower.includes(query) || simple.includes(query);
+}
+
+/** Returns true if a trail is marked as completed in the global state. */
+function isTrailCompleted(name) {
+  const status = completedTrails[name];
+  return status && status.completed;
+}
+
+/** Show a message when the filtered list is empty. */
+function showEmptyState(container, query) {
+  const emptyMsg    = document.createElement('div');
+  emptyMsg.className = 'empty-state';
+  emptyMsg.textContent = query
+    ? 'No trails found. Try a different search.'
+    : 'No trails available.';
+  container.appendChild(emptyMsg);
+}
+
+/**
+ * Create a fully wired list item for a given trail.  It includes the name,
+ * date display/input, status indicator, and optional virtual hike button.
+ */
+function createTrailListItem(name) {
+  const li       = document.createElement('li');
+  const nameSpan = document.createElement('span');
+  nameSpan.className  = 'trail-name';
+  nameSpan.textContent = name;
+
+  // Build status circle and date controls.
+  const { statusSpan, dateContainer, dateInput } = createStatusAndDateControls(name);
+
+  // Optional: button to launch virtual hike (remove if not needed).
+  const hikeBtn = document.createElement('button');
+  hikeBtn.className = 'hike-btn';
+  hikeBtn.title     = 'Virtual Hike';
+  hikeBtn.innerHTML = '🌄';
+  hikeBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    const encoded = encodeURIComponent(name);
+    window.open(`virtual_hike.html?trail=${encoded}`, '_blank');
+  });
+
+  // When clicking the list item, highlight the trail on the map.
+  li.addEventListener('click', () => {
+    const info = trailLayers[name];
+    if (info) {
+      highlightLayer(info.layer);
+      map.fitBounds(info.layer.getBounds(), { maxZoom: 14, animate: true });
+      info.layer.openPopup();
+      document.querySelectorAll('#trailList li').forEach(el => el.classList.remove('active'));
+      li.classList.add('active');
+    }
+  });
+
+  // Assemble the list item.
+  li.appendChild(nameSpan);
+  li.appendChild(dateContainer);
+  li.appendChild(dateInput);
+  li.appendChild(hikeBtn);   // comment out if not using virtual hike
+  li.appendChild(statusSpan);
+  return li;
+}
+
+/**
+ * Create and wire up the status circle and date picker/input for a trail.
+ * Returns the status span, date container span, and date input element.
+ */
+function createStatusAndDateControls(name) {
+  // Status circle for toggling completion.
+  const statusSpan = document.createElement('span');
+  statusSpan.className = 'status-circle';
+  const statusData = completedTrails[name];
+  if (statusData && statusData.completed) {
+    statusSpan.classList.add('completed');
+  }
+  statusSpan.addEventListener('click', e => {
+    e.stopPropagation();
+    toggleCompletion(name);
+  });
+
+  // Date display.
+  const dateContainer = document.createElement('span');
+  dateContainer.className = 'date-container';
+  if (statusData && statusData.completed) {
+    if (statusData.date) {
+      dateContainer.textContent = statusData.date;
+    } else {
+      dateContainer.innerHTML   = '<span class="date-icon">📅</span>';
+    }
+  } else {
+    dateContainer.style.display = 'none';
+  }
+
+  // Date input for editing.
+  const dateInput  = document.createElement('input');
+  dateInput.type   = 'date';
+  dateInput.className = 'date-input';
+  dateInput.value  = (statusData && statusData.date) ? statusData.date : '';
+
+  // Show the date picker when clicking the display.
+  dateContainer.addEventListener('click', e => {
+    e.stopPropagation();
+    dateContainer.style.display = 'none';
+    dateInput.style.display     = 'inline-flex';
+    dateInput.focus();
+  });
+
+  // Prevent date input click from selecting the trail.
+  dateInput.addEventListener('click', e => e.stopPropagation());
+
+  // Update the stored date when it changes.
+  dateInput.addEventListener('change', () => {
+    const newDate = dateInput.value;
+    if (!completedTrails[name]) {
+      completedTrails[name] = { completed: true, date: newDate };
+    } else {
+      completedTrails[name].completed = true;
+      completedTrails[name].date      = newDate;
+    }
+    saveCompletion();
+    if (newDate) {
+      dateContainer.textContent = newDate;
+    } else {
+      dateContainer.innerHTML   = '<span class="date-icon">📅</span>';
+    }
+  });
+
+  // Hide the picker and restore the display on blur.
+  dateInput.addEventListener('blur', () => {
+    dateInput.style.display = 'none';
+    const data = completedTrails[name];
+    if (data && data.completed) {
+      if (data.date) {
+        dateContainer.textContent = data.date;
+      } else {
+        dateContainer.innerHTML   = '<span class="date-icon">📅</span>';
       }
+      dateContainer.style.display = 'flex';
+    } else {
+      dateContainer.style.display = 'none';
+    }
+  });
 
-      // Load the GeoJSON and initialize the map/list.  After the data is loaded
-      // we add trails to the map and render the list.  Bind event listeners
-      // for search and sort controls.
-      const loadingState = document.getElementById('loadingState');
-      loadingState.style.display = 'block';
-      
-      // Load any previously saved completion status from localStorage
-      loadCompletion();
+  return { statusSpan, dateContainer, dateInput };
+}
 
-      const geoData = await loadGeoJSON();
-      loadingState.style.display = 'none';
-      
-      if (!geoData) {
-        const listElement = document.getElementById('trailList');
-        listElement.innerHTML = '';
-        const errorMsg = document.createElement('div');
-        errorMsg.className = 'empty-state';
-        errorMsg.textContent = 'Failed to load trail data. Please refresh the page.';
-        listElement.parentElement.appendChild(errorMsg);
-        return;
-      }
-      
-      addTrailsToMap(geoData);
-      // Populate the autocomplete suggestions after trail names are loaded
-      populateSuggestions();
-      renderTrailList();
-
-      // Re‑render the list whenever search input or sort order changes
-      document.getElementById('searchInput').addEventListener('input', renderTrailList);
-      document.getElementById('sortSelect').addEventListener('change', renderTrailList);
-
-      // Handle hide completed toggle
-      const hideCheckbox = document.getElementById('hideCompleted');
-      if (hideCheckbox) {
-        hideCheckbox.addEventListener('change', function() {
-          hideCompleted = this.checked;
-          renderTrailList();
-        });
-      }
-
-      // Handle clearing all progress
-      const clearBtn = document.getElementById('clearProgress');
-      if (clearBtn) {
-        clearBtn.addEventListener('click', function() {
-          if (confirm('Are you sure you want to clear all progress?')) {
-            completedTrails = {};
-            saveCompletion();
-            applyCompletionStyles();
-            renderTrailList();
-          }
-        });
-      }
-    })();
-  </script>
+/**
+ * Update `letterPositions` for A‑Z navigation.  For each letter, record
+ * the index of the first trail starting with that letter in the current list.
+ */
+function updateLetterPositions(names) {
+  letterPositions = {};
+  letters.forEach(l => { letterPositions[l] = null; });
+  names.forEach((name, idx) => {
+    const initial = name.charAt(0).toUpperCase();
+    if (letterPositions[initial] === null) {
+      letterPositions[initial] = idx;
+    }
+  });
+}
