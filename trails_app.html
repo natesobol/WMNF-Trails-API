@@ -8,9 +8,9 @@
   layout adapts gracefully between desktop and mobile screen sizes using CSS flexbox and
   media queries.
 
-  For Wix embedding: This version removes the DOCTYPE and full HTML structure to work
-  with Wix's embed element. The Leaflet libraries are loaded via CDN and should work
-  in most modern browsers. Ensure merged_trails.geojson is hosted at the same URL.
+  For Wix embedding: This version uses GitHub's raw content URL to load the GeoJSON file.
+  No DOCTYPE or full HTML structure is needed for Wix embeds. The Leaflet libraries are
+  loaded via CDN. This works across all deployment contexts (GitHub Pages, Wix, etc).
 -->
 <link
   rel="stylesheet"
@@ -335,13 +335,14 @@
       const trailNames = [];
 
       /**
-       * Fetch the GeoJSON file from the server.  Because the file lives in
-       * the same directory as this HTML file, a relative path is sufficient.
-       * If you deploy to a different folder structure, adjust this path.
+       * Fetch the GeoJSON file from the server.  For Wix embedding, we use the
+       * raw GitHub URL to load the GeoJSON file from the repository.
+       * This ensures the file loads correctly regardless of where the HTML is embedded.
        */
       async function loadGeoJSON() {
         try {
-          const response = await fetch('merged_trails.geojson');
+          // Use raw GitHub URL for the GeoJSON file
+          const response = await fetch('https://raw.githubusercontent.com/natesobol/WMNF-Trails-API/main/merged_trails.geojson');
           if (!response.ok) {
             throw new Error(`HTTP ${response.status} – ${response.statusText}`);
           }
