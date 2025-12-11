@@ -562,39 +562,39 @@
         min-height: 320px;
       }
 
-      /* Enable touch-based scrolling on mobile while preventing body scroll */
+      /* Enable smooth touch-based scrolling on mobile */
       #sidebar {
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
-        overscroll-behavior: contain;
+        overscroll-behavior-y: contain;
       }
       #listSection {
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
-        overscroll-behavior: contain;
+        overscroll-behavior-y: contain;
       }
       .trail-list-container {
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
-        overscroll-behavior: contain;
+        overscroll-behavior-y: contain;
       }
       
-      /* Prevent body scroll on mobile */
-      body {
-        overflow: hidden;
-        position: fixed;
-        width: 100%;
-        height: 100%;
-      }
-      
-      html {
-        overflow: hidden;
-      }
-      
+      /* Allow natural scrolling behavior for the main app container */
       #app {
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
-        overscroll-behavior: contain;
+        overscroll-behavior-y: auto;
+        touch-action: pan-y;
+      }
+      
+      /* Ensure body allows scrolling but contains it */
+      body {
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      
+      html {
+        overflow-y: auto;
       }
           /* Button for launching virtual hike page */
     .hike-btn {
@@ -1338,60 +1338,71 @@
       // ------------------------
       // Prevent competing scroll wheels on mobile by managing touch events
       // This ensures smooth scrolling within Wix embeds and prevents body scroll conflicts
-      if (window.innerWidth <= 768) {
+      function setupMobileScroll() {
+        const isMobile = window.innerWidth <= 768;
+        if (!isMobile) return;
+        
         const scrollableContainers = [
           document.getElementById('sidebar'),
           document.getElementById('listSection'),
-          document.querySelector('.trail-list-container'),
-          document.getElementById('app')
+          document.querySelector('.trail-list-container')
         ];
         
+        // Remove all touch event listeners that might interfere
         scrollableContainers.forEach(container => {
           if (!container) return;
           
-          let isScrolling = false;
-          let startY = 0;
-          
+          // Simple approach: just prevent scroll propagation at boundaries
           container.addEventListener('touchstart', function(e) {
-            isScrolling = true;
-            startY = e.touches[0].clientY;
+            const scrollTop = this.scrollTop;
+            const scrollHeight = this.scrollHeight;
+            const height = this.clientHeight;
+            const clientY = e.touches[0].clientY;
+            
+            // Store the initial touch position on the container
+            this.setAttribute('data-start-y', clientY);
+            this.setAttribute('data-start-scroll', scrollTop);
           }, { passive: true });
           
           container.addEventListener('touchmove', function(e) {
-            if (!isScrolling) return;
+            const startY = parseFloat(this.getAttribute('data-start-y') || 0);
+            const startScroll = parseFloat(this.getAttribute('data-start-scroll') || 0);
+            const currentY = e.touches[0].clientY;
+            const deltaY = currentY - startY;
             
             const scrollTop = this.scrollTop;
             const scrollHeight = this.scrollHeight;
             const height = this.clientHeight;
-            const currentY = e.touches[0].clientY;
-            const deltaY = startY - currentY;
+            const isAtTop = scrollTop === 0;
+            const isAtBottom = scrollTop + height >= scrollHeight - 1;
             
-            // Prevent overscroll bounce to avoid triggering parent scroll
-            // If scrolling up and already at top, or scrolling down and at bottom
-            if ((scrollTop === 0 && deltaY < 0) || 
-                (scrollTop + height >= scrollHeight && deltaY > 0)) {
+            // Prevent overscroll: if at boundary and trying to scroll further, stop it
+            if ((isAtTop && deltaY > 0) || (isAtBottom && deltaY < 0)) {
               e.preventDefault();
+              return false;
             }
-            
-            startY = currentY;
           }, { passive: false });
-          
-          container.addEventListener('touchend', function() {
-            isScrolling = false;
-          }, { passive: true });
         });
         
-        // Disable map double-tap zoom for better mobile touch experience
-        map.doubleClickZoom.disable();
-        
-        // Prevent map touch events from bubbling to parent
+        // For the map, allow all touch events without interference
         const mapElement = document.getElementById('map');
         if (mapElement) {
-          mapElement.addEventListener('touchstart', function(e) {
-            e.stopPropagation();
-          }, { passive: true });
+          map.touchZoom.enable();
+          map.dragging.enable();
+          map.tap && map.tap.enable();
+          map.doubleClickZoom.disable();
         }
       }
+      
+      // Initialize mobile scroll handling
+      setupMobileScroll();
+      
+      // Re-initialize on window resize
+      let resizeTimer;
+      window.addEventListener('resize', function() {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(setupMobileScroll, 250);
+      });
 
     })();
   </script>
