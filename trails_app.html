@@ -562,15 +562,39 @@
         min-height: 320px;
       }
 
-      /* Remove internal scrollbars on mobile to prevent competing scrollers */
+      /* Enable touch-based scrolling on mobile while preventing body scroll */
       #sidebar {
-        overflow-y: visible;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
       }
       #listSection {
-        overflow-y: visible;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
       }
       .trail-list-container {
-        overflow-y: visible;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+      }
+      
+      /* Prevent body scroll on mobile */
+      body {
+        overflow: hidden;
+        position: fixed;
+        width: 100%;
+        height: 100%;
+      }
+      
+      html {
+        overflow: hidden;
+      }
+      
+      #app {
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
       }
           /* Button for launching virtual hike page */
     .hike-btn {
@@ -1308,6 +1332,66 @@
           renderTrailList();
         }
       });
+
+      // ------------------------
+      // Mobile scroll optimization
+      // ------------------------
+      // Prevent competing scroll wheels on mobile by managing touch events
+      // This ensures smooth scrolling within Wix embeds and prevents body scroll conflicts
+      if (window.innerWidth <= 768) {
+        const scrollableContainers = [
+          document.getElementById('sidebar'),
+          document.getElementById('listSection'),
+          document.querySelector('.trail-list-container'),
+          document.getElementById('app')
+        ];
+        
+        scrollableContainers.forEach(container => {
+          if (!container) return;
+          
+          let isScrolling = false;
+          let startY = 0;
+          
+          container.addEventListener('touchstart', function(e) {
+            isScrolling = true;
+            startY = e.touches[0].clientY;
+          }, { passive: true });
+          
+          container.addEventListener('touchmove', function(e) {
+            if (!isScrolling) return;
+            
+            const scrollTop = this.scrollTop;
+            const scrollHeight = this.scrollHeight;
+            const height = this.clientHeight;
+            const currentY = e.touches[0].clientY;
+            const deltaY = startY - currentY;
+            
+            // Prevent overscroll bounce to avoid triggering parent scroll
+            // If scrolling up and already at top, or scrolling down and at bottom
+            if ((scrollTop === 0 && deltaY < 0) || 
+                (scrollTop + height >= scrollHeight && deltaY > 0)) {
+              e.preventDefault();
+            }
+            
+            startY = currentY;
+          }, { passive: false });
+          
+          container.addEventListener('touchend', function() {
+            isScrolling = false;
+          }, { passive: true });
+        });
+        
+        // Disable map double-tap zoom for better mobile touch experience
+        map.doubleClickZoom.disable();
+        
+        // Prevent map touch events from bubbling to parent
+        const mapElement = document.getElementById('map');
+        if (mapElement) {
+          mapElement.addEventListener('touchstart', function(e) {
+            e.stopPropagation();
+          }, { passive: true });
+        }
+      }
 
     })();
   </script>
