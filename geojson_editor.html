@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WMNF Trails GeoJSON Editor</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      crossorigin=""
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"
+    />
+    <link rel="stylesheet" href="geojson_editor.css" />
+  </head>
+  <body>
+    <header class="page-header">
+      <div class="title-block">
+        <h1>WMNF Trails GeoJSON Editor</h1>
+        <p>View, adjust, and export <code>merged_trails.geojson</code> directly in the browser.</p>
+      </div>
+      <div class="action-row">
+        <button id="loadLocal" class="secondary">Load Local File</button>
+        <label for="fileInput" class="file-label">Import GeoJSON<input id="fileInput" type="file" accept="application/geo+json,application/json,.geojson" /></label>
+        <button id="reset" class="secondary">Reset</button>
+        <button id="download" class="primary">Download Edited GeoJSON</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="sidebar">
+        <div class="status">
+          <h2>Status</h2>
+          <dl>
+            <div>
+              <dt>Features loaded</dt>
+              <dd id="featureCount">0</dd>
+            </div>
+            <div>
+              <dt>Last action</dt>
+              <dd id="lastAction">Waiting for data…</dd>
+            </div>
+          </dl>
+        </div>
+        <div class="help">
+          <h2>How to use</h2>
+          <ol>
+            <li>Click <strong>Load Local File</strong> to fetch <code>merged_trails.geojson</code> from this repository.</li>
+            <li>Use the draw toolbar to add, edit, or delete trail geometries.</li>
+            <li>Click a trail to inspect its properties. Update metadata in the popup form.</li>
+            <li>When finished, click <strong>Download Edited GeoJSON</strong> to save your changes.</li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="map-panel">
+        <div id="map"></div>
+      </section>
+    </main>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="https://unpkg.com/leaflet-geometryutil@0.10.0/src/leaflet.geometryutil.js"></script>
+    <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+    <script>
+      const map = L.map('map', {
+        zoomSnap: 0.25,
+        worldCopyJump: true,
+      }).setView([44.1602, -71.5003], 9);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors',
+      }).addTo(map);
+
+      const drawnItems = new L.FeatureGroup();
+      map.addLayer(drawnItems);
+
+      const drawControl = new L.Control.Draw({
+        draw: {
+          polygon: true,
+          polyline: true,
+          rectangle: false,
+          circle: false,
+          marker: true,
+          circlemarker: false,
+        },
+        edit: {
+          featureGroup: drawnItems,
+        },
+      });
+      map.addControl(drawControl);
+
+      const featureCount = document.getElementById('featureCount');
+      const lastAction = document.getElementById('lastAction');
+
+      const updateCounts = () => {
+        featureCount.textContent = drawnItems.getLayers().length;
+      };
+
+      const updateLastAction = (message) => {
+        lastAction.textContent = message;
+      };
+
+      const parsePropertiesForm = (form) => {
+        const inputs = form.querySelectorAll('input, textarea');
+        return Array.from(inputs).reduce((acc, input) => {
+          acc[input.name] = input.value;
+          return acc;
+        }, {});
+      };
+
+      const featureToPopupContent = (feature = {}, layer) => {
+        const props = feature.properties || {};
+        const fields = Object.keys(props).length ? Object.keys(props) : ['name'];
+        const rows = fields
+          .map((key) => {
+            const value = props[key] ?? '';
+            return `<label>${key}<input name="${key}" value="${value}" /></label>`;
+          })
+          .join('');
+
+        let meta = '';
+        if (layer instanceof L.Polygon || layer instanceof L.Polyline) {
+          const latLngs = layer.getLatLngs?.();
+          const firstRing = Array.isArray(latLngs) ? latLngs[0] : [];
+          if (firstRing && firstRing.length) {
+            const area = L.GeometryUtil.geodesicArea(firstRing);
+            meta = `<p class="popup-meta">Area: ${area.toFixed(2)} m²</p>`;
+          }
+        }
+
+        return `
+          <form class="popup-form">
+            ${rows}
+            <label>Notes<textarea name="notes">${props.notes ?? ''}</textarea></label>
+            <button type="submit">Save Properties</button>
+          </form>
+          ${meta}
+        `;
+      };
+
+      const attachPopup = (feature, layer) => {
+        const content = featureToPopupContent(feature, layer);
+        layer.bindPopup(content);
+        layer.on('popupopen', (event) => {
+          const form = event.popup.getElement().querySelector('form');
+          form?.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const updated = parsePropertiesForm(form);
+            layer.feature = layer.feature || { type: 'Feature', properties: {}, geometry: {} };
+            layer.feature.properties = updated;
+            updateLastAction('Updated properties for a feature');
+          });
+        });
+      };
+
+      const geoJsonLayer = L.geoJSON(null, {
+        style: () => ({ color: '#4a9eff', weight: 3 }),
+        onEachFeature: (feature, layer) => {
+          attachPopup(feature, layer);
+          drawnItems.addLayer(layer);
+        },
+      });
+
+      const loadGeoJson = async (source) => {
+        try {
+          updateLastAction('Loading GeoJSON…');
+          const response = await fetch(source);
+          if (!response.ok) throw new Error(`Failed to load GeoJSON: ${response.status}`);
+          const data = await response.json();
+          geoJsonLayer.clearLayers();
+          drawnItems.clearLayers();
+          geoJsonLayer.addData(data);
+          map.fitBounds(drawnItems.getBounds(), { padding: [16, 16] });
+          updateCounts();
+          updateLastAction(`Loaded ${drawnItems.getLayers().length} features from ${source}`);
+        } catch (error) {
+          console.error(error);
+          updateLastAction(error.message);
+          alert(error.message);
+        }
+      };
+
+      const exportGeoJson = () => {
+        const collection = {
+          type: 'FeatureCollection',
+          features: drawnItems.getLayers().map((layer) => {
+            const geo = layer.toGeoJSON();
+            geo.properties = layer.feature?.properties || geo.properties || {};
+            return geo;
+          }),
+        };
+
+        const blob = new Blob([JSON.stringify(collection, null, 2)], { type: 'application/geo+json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'merged_trails.edited.geojson';
+        link.click();
+        URL.revokeObjectURL(url);
+        updateLastAction('Downloaded edited GeoJSON');
+      };
+
+      const handleFileUpload = (file) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const data = JSON.parse(e.target.result);
+            geoJsonLayer.clearLayers();
+            drawnItems.clearLayers();
+            geoJsonLayer.addData(data);
+            map.fitBounds(drawnItems.getBounds(), { padding: [16, 16] });
+            updateCounts();
+            updateLastAction(`Loaded ${drawnItems.getLayers().length} features from uploaded file`);
+          } catch (error) {
+            console.error(error);
+            updateLastAction('Failed to parse uploaded GeoJSON');
+            alert('Could not parse the uploaded GeoJSON file.');
+          }
+        };
+        reader.readAsText(file);
+      };
+
+      map.on(L.Draw.Event.CREATED, (event) => {
+        const { layer } = event;
+        layer.feature = layer.feature || { type: 'Feature', properties: {} };
+        attachPopup(layer.feature, layer);
+        drawnItems.addLayer(layer);
+        updateCounts();
+        updateLastAction('Added a new feature');
+      });
+
+      map.on(L.Draw.Event.EDITED, () => {
+        updateCounts();
+        updateLastAction('Edited features');
+      });
+
+      map.on(L.Draw.Event.DELETED, () => {
+        updateCounts();
+        updateLastAction('Deleted features');
+      });
+
+      document.getElementById('download').addEventListener('click', exportGeoJson);
+
+      document.getElementById('fileInput').addEventListener('change', (event) => {
+        const file = event.target.files?.[0];
+        if (file) handleFileUpload(file);
+      });
+
+      document.getElementById('reset').addEventListener('click', () => {
+        drawnItems.clearLayers();
+        updateCounts();
+        updateLastAction('Cleared all features');
+      });
+
+      document.getElementById('loadLocal').addEventListener('click', () => loadGeoJson('merged_trails.geojson'));
+
+      // Initial load for convenience
+      loadGeoJson('merged_trails.geojson');
+    </script>
+  </body>
+</html>
