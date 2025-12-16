@@ -260,6 +260,106 @@
       overflow-x: hidden;
     }
 
+    /* Container to hold the two informational panels beneath the map.  On wide
+       screens, present them side by side; on narrow screens, stack them. */
+    .info-panels {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-top: 1rem;
+    }
+
+    .trail-info-panel,
+    .peakbagger-panel {
+      flex: 1 1 300px;
+      padding: 1rem 1.25rem;
+      background-color: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+      min-width: 280px;
+    }
+
+    .trail-info-panel h2,
+    .peakbagger-panel h2 {
+      margin: 0 0 0.5rem;
+      font-size: 1.25rem;
+      color: var(--text-primary);
+      text-align: center;
+    }
+
+    .trail-info-panel p,
+    .peakbagger-panel p {
+      margin: 0.25rem 0 0.75rem;
+      color: var(--text-secondary);
+      text-align: center;
+    }
+
+    .trail-info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.75rem;
+    }
+
+    .trail-info-item {
+      padding: 0.75rem;
+      background-color: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .trail-info-item span {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+
+    .trail-info-item strong {
+      color: var(--text-primary);
+      font-size: 1rem;
+      word-break: break-word;
+    }
+
+    .trail-info-empty {
+      text-align: center;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .peakbagger-panel .cta {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      align-items: center;
+    }
+
+    .peakbagger-panel a {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.6rem 1rem;
+      background: linear-gradient(135deg, var(--button-green) 0%, var(--button-green-dark) 100%);
+      color: white;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 600;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+    }
+
+    .peakbagger-panel a:hover {
+      filter: brightness(1.05);
+    }
+
+    @media (max-width: 900px) {
+      .info-panels {
+        flex-direction: column;
+      }
+    }
+
     .trail-list-container::-webkit-scrollbar {
       width: 8px;
     }
@@ -675,6 +775,29 @@
       <!-- Map container wrapped in its own panel to provide padding and border -->
       <div id="mapContainer">
         <div id="map"></div>
+        <div class="info-panels">
+          <div id="trailInfoPanel" class="trail-info-panel">
+            <h2>Trail details</h2>
+            <p>Select a trail to view distance, elevation, and OpenStreetMap details.</p>
+          </div>
+          <div class="peakbagger-panel">
+            <h2>Peakbagger progress</h2>
+            <p>Track your NH48 progress or log ascents with the WMNF Peakbagger lists.</p>
+            <div class="cta">
+              <a href="https://peakbagger.com/peak.aspx" target="_blank" rel="noopener noreferrer">
+                <!-- Upward arrow icon -->
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M8 12a.75.75 0 0 1-.53-.22l-4-4a.75.75 0 1 1 1.06-1.06L7.25 9.44V2.75a.75.75 0 0 1 1.5 0v6.69l2.72-2.72a.75.75 0 1 1 1.06 1.06l-4 4A.75.75 0 0 1 8 12Z" />
+                  <path d="M3.5 13.25a.75.75 0 0 0 0 1.5h9a.75.75 0 0 0 0-1.5Z" />
+                </svg>
+                Visit Peakbagger
+              </a>
+              <p style="margin: 0; text-align: center; font-size: 0.9rem; color: var(--text-secondary);">
+                Use Peakbagger to keep detailed records of your White Mountain adventures.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <!-- List section below the map, spanning full width -->
@@ -773,6 +896,142 @@
       // Track whether completed trails should be hidden in the list. This is toggled
       // via the settings panel checkbox. Defaults to false (show all).
       let hideCompleted = false;
+
+      // Trail info lookup and UI state for the details panel beneath the map.
+      const trailInfoPanel = document.getElementById('trailInfoPanel');
+      let trailInfoLookup = new Map();
+      let trailInfoLoaded = false;
+      let currentTrailSelection = null;
+
+      // Normalize trail names for matching (case-insensitive, trimmed, collapses spaces).
+      function normalizeTrailName(name) {
+        return (name || '')
+          .toString()
+          .trim()
+          .replace(/\s+/g, ' ')
+          .toLowerCase();
+      }
+
+      // Register a record in the lookup map using a few common name variants.
+      function registerTrailRecord(record) {
+        if (!record || !record.trail_name) return;
+        const base = normalizeTrailName(record.trail_name);
+        const variants = new Set([base]);
+        const stripped = base.replace(/\btrail\b/gi, '').trim();
+        if (stripped) {
+          variants.add(stripped);
+          variants.add(`${stripped} trail`);
+        }
+        variants.forEach(key => {
+          if (key && !trailInfoLookup.has(key)) {
+            trailInfoLookup.set(key, record);
+          }
+        });
+      }
+
+      // Fetch supplemental trail info (distance, elevation, OSM properties).
+      async function loadTrailInfoData() {
+        const urls = [
+          './trails_with_osm.json',
+          'https://cdn.jsdelivr.net/gh/natesobol/WMNF-Trails-API@main/trails_with_osm.json',
+          'https://raw.githubusercontent.com/natesobol/WMNF-Trails-API/main/trails_with_osm.json',
+          'https://unpkg.com/natesobol/WMNF-Trails-API@main/trails_with_osm.json'
+        ];
+
+        for (const url of urls) {
+          try {
+            const response = await fetch(url, { cache: 'no-cache' });
+            if (response.ok) {
+              const records = await response.json();
+              if (Array.isArray(records)) {
+                records.forEach(registerTrailRecord);
+                trailInfoLoaded = true;
+                break;
+              }
+            }
+          } catch (err) {
+            console.warn(`Failed to load trail info from ${url}:`, err.message);
+          }
+        }
+
+        if (!trailInfoLoaded) {
+          trailInfoLoaded = true;
+          console.warn('Trail info data could not be loaded; showing fallback messaging.');
+        }
+
+        if (currentTrailSelection) {
+          renderTrailInfo(currentTrailSelection);
+        }
+      }
+
+      function formatFeet(value) {
+        return value == null ? '—' : `${value.toLocaleString()} ft`;
+      }
+
+      function formatDistance(value) {
+        if (value == null) return '—';
+        const rounded = Math.round(value * 100) / 100;
+        return `${rounded} miles`;
+      }
+
+      function renderTrailInfo(name) {
+        if (!trailInfoPanel) return;
+        currentTrailSelection = name || null;
+
+        if (!name) {
+          trailInfoPanel.innerHTML = `
+            <h2>Trail details</h2>
+            <p class="trail-info-empty">Select a trail to view distance, elevation, and OpenStreetMap details.</p>
+          `;
+          return;
+        }
+
+        const record = trailInfoLookup.get(normalizeTrailName(name));
+        if (!record) {
+          const message = trailInfoLoaded
+            ? 'No additional trail properties available yet. Properties will be populated from OpenStreetMap data.'
+            : 'Loading additional trail properties from OpenStreetMap...';
+          trailInfoPanel.innerHTML = `
+            <h2>${name}</h2>
+            <p class="trail-info-empty">${message}</p>
+          `;
+          return;
+        }
+
+        const props = record.osm_properties || {};
+        const allowedUses = Array.isArray(props.allowed_uses)
+          ? props.allowed_uses.join(', ')
+          : (props.allowed_uses ?? '—');
+
+        const fields = [
+          { label: 'Distance', value: formatDistance(record.distance_miles) },
+          { label: 'Elevation Gain', value: formatFeet(props.elevation_gain_ft) },
+          { label: 'Min Elevation', value: formatFeet(props.min_elevation_ft) },
+          { label: 'Max Elevation', value: formatFeet(props.max_elevation_ft) },
+          { label: 'Surface', value: props.surface ?? '—' },
+          { label: 'Trail Type', value: props.trail_type ?? '—' },
+          { label: 'Difficulty', value: props.difficulty ?? '—' },
+          { label: 'Visibility', value: props.trail_visibility ?? '—' },
+          { label: 'Width', value: props.width ?? '—' },
+          { label: 'Allowed Uses', value: allowedUses },
+          { label: 'Season', value: props.season ?? '—' },
+          { label: 'Maintainer', value: props.maintainer ?? '—' },
+          { label: 'Source', value: props.source ?? '—' }
+        ];
+
+        const items = fields.map(field => `
+          <div class="trail-info-item">
+            <span>${field.label}</span>
+            <strong>${field.value}</strong>
+          </div>
+        `).join('');
+
+        trailInfoPanel.innerHTML = `
+          <h2>${record.trail_name || name}</h2>
+          <p>Information sourced from OpenStreetMap where available.</p>
+          <div class="trail-info-grid">${items}</div>
+        `;
+      }
 
       /**
        * Load completion data from localStorage.  If no data exists, an empty
@@ -1085,6 +1344,7 @@
               highlightLayer(layer);
               map.fitBounds(layer.getBounds(), { maxZoom: 14, animate: true });
               layer.openPopup();
+              renderTrailInfo(name);
             });
           }
         }).addTo(map);
@@ -1196,6 +1456,7 @@
             info.layer.openPopup();
             document.querySelectorAll('#trailList li').forEach(el => el.classList.remove('active'));
             li.classList.add('active');
+            renderTrailInfo(name);
           }
         });
 
@@ -1311,6 +1572,8 @@
       // ------------------------
       // Load completion state, fetch GeoJSON, then populate map and list.
       loadCompletion();
+      renderTrailInfo(null);
+      loadTrailInfoData();
       const geoData = await loadGeoJSON();
       if (geoData) {
         addTrailsToMap(geoData);
